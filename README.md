@@ -18,10 +18,11 @@
 
 - 已完成 MySQL 菜单表和预订单表的初始化脚本
 - 已完成特色菜查询工具及结构化结果转换
+- 已完成预订信息写入 MySQL 的工具
 - 已加入餐厅助手的基础系统提示词
 - 已加入 BGE-M3 模型和 Milvus 客户端的按需加载逻辑
 - 已开始实现 MySQL 菜单数据同步和 Milvus HNSW 向量索引
-- Agent 对话流程、完整数据同步、语义检索结果返回和预订单写入仍在开发中
+- Agent 对话流程、完整数据同步和语义检索结果返回仍在开发中
 
 ## 技术栈
 
@@ -88,6 +89,7 @@ MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3306
 MYSQL_USERNAME=root
 MYSQL_PASSWORD=your-mysql-password
+MYSQL_DATABASE=menu
 
 # Milvus
 MILVUS_URI=http://127.0.0.1:19530

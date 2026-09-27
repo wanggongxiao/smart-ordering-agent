@@ -7,11 +7,12 @@ from pymysql.cursors import DictCursor
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-
+from sqlalchemy import text
 load_dotenv()
 root_path = Path(__file__).parent.parent
 embeddings=None
 milvus_client = None
+engine = None
 
 def get_embeddings():
     global embeddings
@@ -28,6 +29,15 @@ def get_milvus_client():
         milvus_client = pymilvus.Milvus(uri=os.getenv("MILVUS_URI"),token=os.getenv("MILVUS_TOKEN"))
     return milvus_client
 
+def mysql_connection():
+    global engine
+    if engine is None:
+        from sqlalchemy import create_engine
+        engine = create_engine(
+            url=f"mysql+pymysql://{os.getenv('MYSQL_USERNAME')}:{os.getenv('MYSQL_PASSWORD')}@{os.getenv('MYSQL_HOST')}:{os.getenv('MYSQL_PORT')}/{os.getenv('MYSQL_DATABASE')}",
+            pool_size=15
+        )
+    return engine
 
 @tool
 def search_main_dishes():
@@ -118,10 +128,61 @@ def user_flavar_search(user_query:str):
         return "在当前库里没有找到用户喜好相关菜品。"
 
 
+from pydantic import BaseModel,Field
+class ReservationToolArgsInfo(BaseModel):
+    num_people:int = Field(description="预约总人数")
+    num_children:int = Field(description="预约的0-2岁儿童人数")
+    arrival_time:str = Field(description="预约的到达时间，格式：YYYY-MM-DD HH")
+    seat_preference:str = Field(description="预约的座位偏好，当用户没有特殊需求时，传空字符串")
+    main_dish_preference:str = Field(description="预约的主菜偏好，当用户没有特殊需求时，传空字符串")
+    comment:str = Field(description="预约的其他备注，当用户没有特殊需求时，传空字符串")
+@tool(args_schema=ReservationToolArgsInfo)
+def make_reservation(
+    num_people: int,
+    num_children: int,
+    arrival_time: str,
+    seat_preference: str,
+    main_dish_preference: str,
+    comment: str,
+):
+    """
+    创建餐厅预订，并将预订信息写入 MySQL
+    """
+    engine = mysql_connection()
 
+    sql = text("""
+        INSERT INTO reservation_order (
+            num_people,
+            num_children,
+            arrival_time,
+            seat_preference,
+            main_dish_preference,
+            other_comments
+        )
+        VALUES (
+            :num_people,
+            :num_children,
+            :arrival_time,
+            :seat_preference,
+            :main_dish_preference,
+            :comment
+        )
+    """)
 
+    with engine.begin() as conn:
+        conn.execute(sql, {
+            "num_people": num_people,
+            "num_children": num_children,
+            "arrival_time": arrival_time,
+            "seat_preference": seat_preference,
+            "main_dish_preference": main_dish_preference,
+            "comment": comment,
+        })
+
+    return "预定成功"
 
 async def create_agent():
+
     from langchain.agents import create_agent
     from langchain_openai import OpenAI
 
@@ -136,5 +197,6 @@ async def create_agent():
 
 if __name__ == "__main__":
     import asyncio
-    res = search_main_dishes.invoke({})
-    print(res)
+    res1 = make_reservation.invoke({"num_people":1,"num_children":2,"arrival_time":"2026-04-01 13","seat_preference":"无所谓","main_dish_preference":"无所谓","comment":""})
+    # res = search_main_dishes.invoke({})
+    print(res1)
