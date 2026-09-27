@@ -8,6 +8,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from sqlalchemy import text
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 load_dotenv()
 root_path = Path(__file__).parent.parent
 embeddings=None
@@ -181,22 +182,40 @@ def make_reservation(
 
     return "预定成功"
 
-async def create_agent():
+async def create_agent(checkpointer):
 
-    from langchain.agents import create_agent
-    from langchain_openai import OpenAI
-
-    with open(root_path / 'agent' / 'prompt.txt','r',encoding='utf-8') as f:
+    from langchain.agents import create_agent as create_langchain_agent
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+    client = MultiServerMCPClient(
+        connections={
+            "amap_map": {
+            "transport": "sse",
+            "url": "https://mcp.api-inference.modelscope.net/ccaef2a2308042/sse"
+            }
+        }
+    )
+    prompt_path = root_path / "agent" / "prompts" / "system_prompt.txt"
+    with prompt_path.open("r", encoding="utf-8") as f:
         system_prompt = f.read()
-    llm = create_agent(
-        model = "gpt-4o-mini",
-        system_prompt = system_prompt,
-        tools = []
+    mcp_tools = await client.get_tools()
+    return create_langchain_agent(
+        model="gpt-4o-mini",
+        system_prompt=system_prompt,
+        tools=[search_main_dishes, make_reservation] + mcp_tools,
+        checkpointer=checkpointer,
     )
 
+async def test_agent():
+    checkpoint_path = root_path / "agent" / "checkpoint.db"
+    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+        agent = await create_agent(checkpointer)
+        config = {"configurable": {"thread_id": "123"}}
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "你能为我做什么？"}]},
+            config=config,
+        )
+        print(result["messages"][-1].content)
 
 if __name__ == "__main__":
     import asyncio
-    res1 = make_reservation.invoke({"num_people":1,"num_children":2,"arrival_time":"2026-04-01 13","seat_preference":"无所谓","main_dish_preference":"无所谓","comment":""})
-    # res = search_main_dishes.invoke({})
-    print(res1)
+    asyncio.run(test_agent())

@@ -12,3 +12,7 @@ wheels/
 
 # Local embedding models
 models/
+
+# Local LangGraph checkpoints
+agent/checkpoint.db
+agent/checkpoint.db-*
