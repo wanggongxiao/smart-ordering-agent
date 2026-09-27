@@ -6,6 +6,8 @@ import os
 from dotenv import load_dotenv
 from pymysql.cursors import DictCursor
 from pymilvus import DataType , IndexType
+from decimal import Decimal
+load_dotenv()
 def insert_data():
     # 1.连接数据库，获取到menu_items中的所有数据
     import pymysql
@@ -46,24 +48,26 @@ def insert_data():
             json_results = []
             for item in results:
                 json_item = {}
+                new_result = ""
                 for key,value in item.items():
-                    json_item[key_name_mapping[key]] = value
-                json_results.append(json_item)
+                    if type(value) == Decimal:
+                        value = float(value)
+                new_result += f"{key_name_mapping[key]}:{value}\n"
+            json_results.append(new_result)
 
     # 2.连接Miluvs数据库，获取到client对象
     from pymilvus import MilvusClient
     client = MilvusClient(
         uri=os.getenv("MILVUS_HOST"),
-        user=os.getenv("MYSQL_USERNAME"),
-        password=os.getenv("MYSQL_PASSWORD")
+        token=""
     )
     # 3.创建collection
     schema= MilvusClient.create_schema(
         auto_id=True
     )
-    schema.add_field(field_name="id",datatype=DataType.INT64,is_prmary=True)
+    schema.add_field(field_name="id",datatype=DataType.INT64,is_primary=True)
     schema.add_field(field_name="vector",datatype=DataType.FLOAT_VECTOR,dim=1024)
-    schema.add_field(field_name="text",datatype=DataType.JSON)
+    schema.add_field(field_name="text",datatype=DataType.VARCHAR,max_length=1500)
     index_params = MilvusClient.prepare_index_params()
     index_params.add_index(
         field_name="vector",
@@ -71,10 +75,32 @@ def insert_data():
         metric_type = "L2"
     )
 
-    client.create_collection(
+    res = client.create_collection(
         collection_name="menu_items",
         schema=schema,
         index_params=index_params
     )
     # 4.使用embedding模型对menu_items数据进行向量化
+    from langchain_huggingface import HuggingFaceEmbeddings
+    embedding_model = HuggingFaceEmbeddings(
+        model = r"F:\Agent\项目\github\smart-ordering-agent\models\bge-m3"
+    )
+    vector_lists = []
+
+
+    vector_lists = embedding_model.embed_documents(json_results)
+
     # 5.将向量化后的结果插入到Milvus当中去
+    insert_data = []
+    for vector, str_item in zip(vector_lists,json_results):
+        insert_data.append(
+            {
+                "vector":vector,
+                "text":str_item
+            }
+        )
+    inser_res = client.insert(data=insert_data,collection_name="menu_items")
+    print(inser_res)
+
+if __name__ == "__main__":
+    insert_data()

@@ -39,8 +39,8 @@
 smart-ordering-agent/
 |-- agent/
 |   |-- langchain_assitant.py       # Agent 和工具代码
+|   |-- milvus_data_sync.py         # MySQL 菜单数据同步脚本（开发中）
 |   `-- prompts/
-|       |-- milvus_data_sync.py     # MySQL 菜单数据同步脚本（开发中）
 |       `-- system_prompt.txt       # 餐厅助手系统提示词
 |-- models/
 |   `-- bge-m3/                     # 本地向量模型
