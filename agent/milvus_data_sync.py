@@ -52,8 +52,8 @@ def insert_data():
                 for key,value in item.items():
                     if type(value) == Decimal:
                         value = float(value)
-                new_result += f"{key_name_mapping[key]}:{value}\n"
-            json_results.append(new_result)
+                    new_result += f"{key_name_mapping[key]}:{value}\n"
+                json_results.append(new_result)
 
     # 2.连接Miluvs数据库，获取到client对象
     from pymilvus import MilvusClient
