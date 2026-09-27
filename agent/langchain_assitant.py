@@ -10,6 +10,24 @@ from pathlib import Path
 
 load_dotenv()
 root_path = Path(__file__).parent.parent
+embeddings=None
+milvus_client = None
+
+def get_embeddings():
+    global embeddings
+    if embeddings is None:
+        from langchain_huggingface import HuggingFaceEmbeddings
+        embedding_model = HuggingFaceEmbeddings(model=str(root_path / 'models' / 'bge-m3'))
+    return embeddings
+
+def get_milvus_client():
+    global milvus_client
+    if milvus_client is None:
+        from pymilvus import MilvusClient
+        import pymilvus
+        milvus_client = pymilvus.Milvus(uri=os.getenv("MILVUS_URI"),token=os.getenv("MILVUS_TOKEN"))
+    return milvus_client
+
 
 @tool
 def search_main_dishes():
@@ -71,20 +89,35 @@ def user_flavar_search(user_query:str):
     from langchain_huggingface import HuggingFaceEmbeddings
 
     # 1、构建用户query的embedding向量
-    embedding_model = HuggingFaceEmbeddings(model=str(root_path / 'models' / 'bge-m3'))
-    query_vector = embedding_model.embed_query(user_query)
+    embeddings = get_embeddings();
+    query_vector = embeddings.embed_query(user_query)
 
     # 2、连接milvus数据库
-    milvus_client = pymilvus.Milvus(uri=os.getenv("MILVUS_URI"),token=os.getenv("MILVUS_TOKEN"))
-
+    milvus_client = get_embeddings()
     # 3、在milvus中进行向量搜索
-    milvus_client.search(
+    search_res = milvus_client.search(
         collection_name="menu_items",
         data=[query_vector],
         anns_field="embedding",
         output_filds=["text"],
         limit=3
     )
+
+    # 4.解析搜索结果
+    if search_res:
+        all_results = search_res[0]
+        # all_results：列表
+        final_result =[]
+
+        for item in all_results:
+            item_str = item["entity"]['text']
+            final_result.append(item)
+
+        return final_result
+    else:
+        return "在当前库里没有找到用户喜好相关菜品。"
+
+
 
 
 
