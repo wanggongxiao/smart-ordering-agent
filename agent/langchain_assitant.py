@@ -221,6 +221,10 @@ async def test_agent():
     )
     print(result["messages"][-1].content)
 
+async def assistant_query(user_query:str):
+    """
+    接受来自前端的用户querry,使用agent来进行回复
+    """
 if __name__ == "__main__":
     import asyncio
     asyncio.run(test_agent())
