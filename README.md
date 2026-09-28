@@ -81,6 +81,7 @@ cmd /c "mysql -u root -p menu < menu.sql"
 
 ```dotenv
 # OpenAI 兼容接口
+LLM_MODEL=gpt-4o-mini
 LLM_BASE_URL=https://your-api-endpoint.example/v1
 LLM_API_KEY=your-api-key
 

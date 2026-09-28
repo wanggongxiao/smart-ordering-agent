@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from sqlalchemy import text
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.memory import InMemorySaver
 load_dotenv()
 root_path = Path(__file__).parent.parent
 embeddings=None
@@ -182,10 +182,11 @@ def make_reservation(
 
     return "预定成功"
 
-async def create_agent(checkpointer):
+async def create_agent():
 
-    from langchain.agents import create_agent as create_langchain_agent
+    from langchain.agents import create_agent
     from langchain_mcp_adapters.client import MultiServerMCPClient
+    from langchain_openai import ChatOpenAI
     client = MultiServerMCPClient(
         connections={
             "amap_map": {
@@ -194,27 +195,31 @@ async def create_agent(checkpointer):
             }
         }
     )
+    checkpointer = InMemorySaver()
     prompt_path = root_path / "agent" / "prompts" / "system_prompt.txt"
     with prompt_path.open("r", encoding="utf-8") as f:
         system_prompt = f.read()
     mcp_tools = await client.get_tools()
-    return create_langchain_agent(
-        model="gpt-4o-mini",
+    llm = ChatOpenAI(
+        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        api_key=os.getenv("LLM_API_KEY"),
+        base_url=os.getenv("LLM_BASE_URL"),
+    )
+    return create_agent(
+        model=llm,
         system_prompt=system_prompt,
         tools=[search_main_dishes, make_reservation] + mcp_tools,
         checkpointer=checkpointer,
     )
 
 async def test_agent():
-    checkpoint_path = root_path / "agent" / "checkpoint.db"
-    async with AsyncSqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
-        agent = await create_agent(checkpointer)
-        config = {"configurable": {"thread_id": "123"}}
-        result = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": "你能为我做什么？"}]},
-            config=config,
-        )
-        print(result["messages"][-1].content)
+    agent = await create_agent()
+    config = {"configurable": {"thread_id": "123"}}
+    result = await agent.ainvoke(
+        {"messages": [{"role": "user", "content": "你能为我做什么？"}]},
+        config=config,
+    )
+    print(result["messages"][-1].content)
 
 if __name__ == "__main__":
     import asyncio
