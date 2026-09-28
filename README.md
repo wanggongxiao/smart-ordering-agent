@@ -117,6 +117,24 @@ uv run python .\agent\langchain_assitant.py
 
 数据库配置正确时，程序会输出菜单中标记为特色菜的记录。
 
+### 6. 启动 API 服务
+
+在项目根目录执行：
+
+```powershell
+uv run uvicorn api.main:app --reload
+```
+
+服务启动后，可以通过 `POST /chat` 提交用户问题：
+
+```json
+{
+  "query": "你能为我推荐一道清淡的菜吗？"
+}
+```
+
+接口通过 `text/event-stream` 持续返回 Agent 生成的内容。
+
 ## 向量检索设计
 
 项目计划使用以下流程完成基于口味偏好的菜品搜索：
