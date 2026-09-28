@@ -122,7 +122,7 @@ uv run python .\agent\langchain_assitant.py
 在项目根目录执行：
 
 ```powershell
-uv run uvicorn api.main:app --reload
+uv run python run.py
 ```
 
 服务启动后，可以通过 `POST /chat` 提交用户问题：

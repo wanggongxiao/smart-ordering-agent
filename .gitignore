@@ -16,3 +16,6 @@ models/
 # Local LangGraph checkpoints
 agent/checkpoint.db
 agent/checkpoint.db-*
+
+# Local editor settings
+.vscode/
