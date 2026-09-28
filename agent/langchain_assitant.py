@@ -225,6 +225,38 @@ async def assistant_query(user_query:str):
     """
     接受来自前端的用户querry,使用agent来进行回复
     """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    agent = await create_agent()
+    config = {"configurable": {"thread_id": 123}}
+    current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    time_system_prompt = {
+        "role": "system",
+        "content": f"当前时间为 {current_time}(Asia/Shanghai)。",
+    }
+    # result = await agent.ainvoke(
+    #     {
+    #         "messages": [
+    #             time_system_prompt,
+    #             {"role": "user", "content": user_query},
+    #         ]
+    #     },
+    #     config=config,
+    async for chunk in agent.astream({"messages": [time_system_prompt,{"role": "user", "content": user_query},]},config=config,stream_mode="messages"):
+        # 首先chunk是一个tuple:(AIMessageChunk/ToolMessage,_)
+        message = chunk[0]
+        # 然后给到前端 SSE
+        # SSE的数据结构：data:{"type":"token","content":"你好"}
+        # 能快速额产生的token，给到后端
+        import json
+        payload = {"content":message.content,"type":"token"}
+        payload_str = json.dumps(payload,ensure_ascii=False)
+        yield f'data:{payload_str}\n\n'
+
+
 if __name__ == "__main__":
     import asyncio
     asyncio.run(test_agent())
