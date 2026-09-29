@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 from pymysql.cursors import DictCursor
 from pymilvus import DataType , IndexType
 from decimal import Decimal
+from sentence_transformers import SentenceTransformer
+
 load_dotenv()
 def insert_data():
     # 1.连接数据库，获取到menu_items中的所有数据
@@ -61,6 +63,8 @@ def insert_data():
         uri=os.getenv("MILVUS_HOST"),
         token=""
     )
+    if client.has_collection("menu_items"):
+        client.drop_collection("menu_items")
     # 3.创建collection
     schema= MilvusClient.create_schema(
         auto_id=True
@@ -82,13 +86,14 @@ def insert_data():
     )
     # 4.使用embedding模型对menu_items数据进行向量化
     from langchain_huggingface import HuggingFaceEmbeddings
-    embedding_model = HuggingFaceEmbeddings(
-        model = r"F:\Agent\项目\github\smart-ordering-agent\models\bge-m3"
-    )
+    embedding_model = SentenceTransformer("BAAI/bge-m3")
     vector_lists = []
 
 
-    vector_lists = embedding_model.embed_documents(json_results)
+    vector_lists = embedding_model.encode(
+    json_results,
+    normalize_embeddings=True,
+    ).tolist()
 
     # 5.将向量化后的结果插入到Milvus当中去
     insert_data = []

@@ -18,8 +18,8 @@ engine = None
 def get_embeddings():
     global embeddings
     if embeddings is None:
-        from langchain_huggingface import HuggingFaceEmbeddings
-        embedding_model = HuggingFaceEmbeddings(model=str(root_path / 'models' / 'bge-m3'))
+        from sentence_transformers import SentenceTransformer
+        embeddings = SentenceTransformer("BAAI/bge-m3")
     return embeddings
 
 def get_milvus_client():
@@ -27,7 +27,7 @@ def get_milvus_client():
     if milvus_client is None:
         from pymilvus import MilvusClient
         import pymilvus
-        milvus_client = pymilvus.Milvus(uri=os.getenv("MILVUS_URI"),token=os.getenv("MILVUS_TOKEN"))
+        milvus_client = pymilvus.MilvusClient(uri=os.getenv("MILVUS_HOST"),token=os.getenv("MILVUS_TOKEN"))
     return milvus_client
 
 def mysql_connection():
@@ -45,7 +45,7 @@ def search_main_dishes():
     """
     用来搜索餐当中的主菜
     """
-
+    print("进入搜索主菜工具")
     key_name_mapping={
         "dish_name":"菜名",
         "price":"价格",
@@ -94,23 +94,27 @@ def search_main_dishes():
 def user_flavar_search(user_query:str):
     
     """
-    基于用户的口味偏好来搜索菜品
+    基于用户的口味偏好来搜索相关菜品
     """
     import pymilvus
     from langchain_huggingface import HuggingFaceEmbeddings
 
+    print("进入口味偏好工具")
     # 1、构建用户query的embedding向量
-    embeddings = get_embeddings();
-    query_vector = embeddings.embed_query(user_query)
+    embeddings = get_embeddings()
+    query_vector = embeddings.encode(
+    user_query,
+    normalize_embeddings=True,
+    ).tolist()
 
     # 2、连接milvus数据库
-    milvus_client = get_embeddings()
+    milvus_client = get_milvus_client()
     # 3、在milvus中进行向量搜索
     search_res = milvus_client.search(
         collection_name="menu_items",
         data=[query_vector],
-        anns_field="embedding",
-        output_filds=["text"],
+        anns_field="vector",
+        output_fields=["text"],
         limit=3
     )
 
@@ -208,7 +212,7 @@ async def create_agent():
     return create_agent(
         model=llm,
         system_prompt=system_prompt,
-        tools=[search_main_dishes, make_reservation] + mcp_tools,
+        tools=[search_main_dishes, make_reservation,user_flavar_search] + mcp_tools,
         checkpointer=checkpointer,
     )
 
@@ -227,7 +231,7 @@ async def assistant_query(user_query:str):
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
-
+    from langchain.messages import ToolMessage
     agent = await create_agent()
     config = {"configurable": {"thread_id": 123}}
     current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime(
@@ -248,6 +252,8 @@ async def assistant_query(user_query:str):
     async for chunk in agent.astream({"messages": [time_system_prompt,{"role": "user", "content": user_query},]},config=config,stream_mode="messages"):
         # 首先chunk是一个tuple:(AIMessageChunk/ToolMessage,_)
         message = chunk[0]
+        if type(message) == ToolMessage:
+            continue
         # 然后给到前端 SSE
         # SSE的数据结构：data:{"type":"token","content":"你好"}
         # 能快速额产生的token，给到后端
