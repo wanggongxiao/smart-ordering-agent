@@ -260,7 +260,7 @@ async def assistant_query(user_query:str):
         import json
         payload = {"content":message.content,"type":"token"}
         payload_str = json.dumps(payload,ensure_ascii=False)
-        yield f'data:{payload_str}\n\n'
+        yield f'data: {payload_str}\n\n'
 
 
 if __name__ == "__main__":
