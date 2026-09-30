@@ -1,13 +1,14 @@
 """FastAPI HTTP endpoints."""
 
 import os
+from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from agent.langchain_assitant import assistant_query, get_embeddings
+from agent.langchain_assitant import assistant_query
 
 
 load_dotenv()
@@ -64,13 +65,23 @@ async def _load_faq_items_from_redis():
     ]
 
 
-def get_similarity_score(query: str, faq_question: str) -> float:
-    embeddings = get_embeddings()
-    query_vector, faq_vector = embeddings.encode(
-        [query, faq_question],
-        normalize_embeddings=True,
-    )
-    return float(query_vector @ faq_vector)
+def _get_similarity_score(query: str, faq_question: str) -> float:
+    """
+    使用简单的字符串匹配算法，计算query和faq_question的相似度的分
+    """
+    if not query or not faq_question:
+        return 0.0
+
+    # 使用包：difflib.sequenceMatcher
+    sequence_matcher = SequenceMatcher(None, query, faq_question)
+    score = sequence_matcher.ratio()
+    query_chars = set(query)
+    faq_chars = set(faq_question)
+    union = query_chars | faq_chars
+    jaccard_score = len(query_chars & faq_chars) / len(union) if union else 0.0
+
+    # 3、对这两个分数做一个加权
+    return 0.6 * score + 0.4 * jaccard_score
 
 
 @app.post("/chat")
@@ -81,7 +92,6 @@ async def chat_endpoint(request: ChatRequest):
         media_type="text/event-stream",
     )
 
-
 @app.get("/faq/suggest", response_model=FAQResponse)
 async def faq_endpoint(query: str, limit: int = 5):
     # 1、从redis中获取的所有Faq数据
@@ -90,7 +100,7 @@ async def faq_endpoint(query: str, limit: int = 5):
     # 2、将这些书中question和用户的query,进行比较，得到相识度得分
     score_list = []
     for faq_item in faq_items:
-        score = get_similarity_score(query, faq_item.question)
+        score = _get_similarity_score(query, faq_item.question)
         score_list.append((score, faq_item))
 
     score_list.sort(key=lambda item: item[0], reverse=True)
