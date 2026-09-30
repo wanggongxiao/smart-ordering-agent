@@ -10,6 +10,9 @@ wheels/
 .venv
 .env
 
+# Frontend dependencies
+node_modules/
+
 # Local embedding models
 models/
 
