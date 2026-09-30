@@ -1,19 +1,25 @@
 """
 用来定义agent的主要代码
 """
+import asyncio
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from langchain.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
 import pymysql
 from pymysql.cursors import DictCursor 
-import os
-from dotenv import load_dotenv
-from pathlib import Path
 from sqlalchemy import text
-from langgraph.checkpoint.memory import InMemorySaver
+
 load_dotenv()
 root_path = Path(__file__).parent.parent
 embeddings=None
 milvus_client = None
 engine = None
+agent_instance = None
+agent_checkpointer = InMemorySaver()
+agent_lock = asyncio.Lock()
 
 def get_embeddings():
     global embeddings
@@ -135,9 +141,9 @@ def user_flavar_search(user_query:str):
 
 from pydantic import BaseModel,Field
 class ReservationToolArgsInfo(BaseModel):
-    num_people:int = Field(description="预约总人数")
-    num_children:int = Field(description="预约的0-2岁儿童人数")
-    arrival_time:str = Field(description="预约的到达时间，格式：YYYY-MM-DD HH")
+    num_people:int = Field(ge=1, description="预约总人数")
+    num_children:int = Field(default=0, ge=0, description="预约的0-2岁儿童人数；未提及时为0")
+    arrival_time:str = Field(description="预约的准确到达时间，格式：YYYY-MM-DD HH")
     seat_preference:str = Field(description="预约的座位偏好，当用户没有特殊需求时，传空字符串")
     main_dish_preference:str = Field(description="预约的主菜偏好，当用户没有特殊需求时，传空字符串")
     comment:str = Field(description="预约的其他备注，当用户没有特殊需求时，传空字符串")
@@ -151,7 +157,7 @@ def make_reservation(
     comment: str,
 ):
     """
-    创建餐厅预订，并将预订信息写入 MySQL
+    用户明确确认完整预订信息后，创建餐厅预订并写入 MySQL。
     """
     engine = mysql_connection()
 
@@ -199,7 +205,6 @@ async def create_agent():
             }
         }
     )
-    checkpointer = InMemorySaver()
     prompt_path = root_path / "agent" / "prompts" / "system_prompt.txt"
     with prompt_path.open("r", encoding="utf-8") as f:
         system_prompt = f.read()
@@ -213,11 +218,21 @@ async def create_agent():
         model=llm,
         system_prompt=system_prompt,
         tools=[search_main_dishes, make_reservation,user_flavar_search] + mcp_tools,
-        checkpointer=checkpointer,
+        checkpointer=agent_checkpointer,
     )
 
+
+async def get_agent():
+    """Create the Agent once so its checkpointer survives across requests."""
+    global agent_instance
+    if agent_instance is None:
+        async with agent_lock:
+            if agent_instance is None:
+                agent_instance = await create_agent()
+    return agent_instance
+
 async def test_agent():
-    agent = await create_agent()
+    agent = await get_agent()
     config = {"configurable": {"thread_id": "123"}}
     result = await agent.ainvoke(
         {"messages": [{"role": "user", "content": "你能为我做什么？"}]},
@@ -225,15 +240,15 @@ async def test_agent():
     )
     print(result["messages"][-1].content)
 
-async def assistant_query(user_query:str):
+async def assistant_query(user_query: str, thread_id: str):
     """
     接受来自前端的用户querry,使用agent来进行回复
     """
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from langchain.messages import ToolMessage
-    agent = await create_agent()
-    config = {"configurable": {"thread_id": 123}}
+    agent = await get_agent()
+    config = {"configurable": {"thread_id": thread_id}}
     current_time = datetime.now(ZoneInfo("Asia/Shanghai")).strftime(
         "%Y-%m-%d %H:%M:%S"
     )

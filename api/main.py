@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional,List
 from sqlalchemy import text
 from datetime import datetime
@@ -34,6 +34,7 @@ def _get_redis_client():
 
 class ChatRequest(BaseModel):
     query: str
+    thread_id: str = Field(default="default", min_length=1, max_length=128)
 
 
 class FaqItem(BaseModel):
@@ -130,7 +131,7 @@ def _get_similarity_score(query: str, faq_question: str) -> float:
 async def chat_endpoint(request: ChatRequest):
     """Stream an Agent response using server-sent events."""
     return StreamingResponse(
-        assistant_query(request.query),
+        assistant_query(request.query, request.thread_id),
         media_type="text/event-stream",
     )
 

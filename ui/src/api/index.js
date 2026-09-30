@@ -1,5 +1,21 @@
 import axios from 'axios'
 
+const CHAT_THREAD_ID_KEY = 'smart-ordering-agent-thread-id'
+
+const getChatThreadId = () => {
+  let threadId = window.sessionStorage.getItem(CHAT_THREAD_ID_KEY)
+  if (!threadId) {
+    threadId = window.crypto?.randomUUID?.() || `chat-${Date.now()}-${Math.random()}`
+    window.sessionStorage.setItem(CHAT_THREAD_ID_KEY, threadId)
+  }
+  return threadId
+}
+
+const createChatPayload = (query) => ({
+  query,
+  thread_id: getChatThreadId()
+})
+
 // 创建axios实例
 const api = axios.create({
   baseURL: '/api',  // 使用代理路径
@@ -52,7 +68,7 @@ api.interceptors.response.use(
 export const chatAPI = {
   // 发送聊天消息
   sendMessage: async (query) => {
-    return await api.post('/chat', { query })
+    return await api.post('/chat', createChatPayload(query))
   },
   // 发送流式聊天消息
   sendStreamMessage: async (query, onMessage, onError, onDone) => {
@@ -62,7 +78,7 @@ export const chatAPI = {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query })
+        body: JSON.stringify(createChatPayload(query))
       });
 
       if (!response.ok) {
