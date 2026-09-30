@@ -12,6 +12,15 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     query: str
 
+class FaqItem(BaseModel):
+    question:str
+    answer:str
+class FAQResponse(BaseModel):
+    success:bool
+    query: str
+    # 针对用户的一个问题，需要给多个faq
+    sugggest:list[FaqItem]
+
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -20,3 +29,9 @@ async def chat_endpoint(request: ChatRequest):
         assistant_query(request.query),
         media_type="text/event-stream",
     )
+
+@app.post("/fap")
+async def faq_endpoint(resquest:ChatRequest):
+    query = resquest.query
+    # 1、从redis中获取的所有Faq数据
+
