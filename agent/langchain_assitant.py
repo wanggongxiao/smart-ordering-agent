@@ -11,6 +11,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 import pymysql
 from pymysql.cursors import DictCursor 
 from sqlalchemy import text
+import threading
 
 load_dotenv()
 root_path = Path(__file__).parent.parent
@@ -23,9 +24,10 @@ agent_lock = asyncio.Lock()
 
 def get_embeddings():
     global embeddings
-    if embeddings is None:
-        from sentence_transformers import SentenceTransformer
-        embeddings = SentenceTransformer("BAAI/bge-m3")
+    with threading.Lock():
+        if embeddings is None:
+            from sentence_transformers import SentenceTransformer
+            embeddings = SentenceTransformer("BAAI/bge-m3")
     return embeddings
 
 def get_milvus_client():

@@ -52,6 +52,9 @@ api.interceptors.response.use(
     return response.data
   },
   error => {
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      return Promise.reject(error)
+    }
     console.error('响应错误:', error.response?.status, error.response?.data)
     if (error.response?.status === 500) {
       throw new Error('处理中遇到问题，请稍后再试')
@@ -140,9 +143,10 @@ export const menuAPI = {
 
 // 固定问题/FAQ 推荐
 export const faqAPI = {
-  suggest: async (query, limit = 5) => {
+  suggest: async (query, limit = 5, signal) => {
     return await api.get('/faq/suggest', {
-      params: { query, limit }
+      params: { query, limit },
+      signal
     })
   }
 }

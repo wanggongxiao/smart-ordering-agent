@@ -60,7 +60,7 @@
                 <div class="faq-suggestions-list">
                   <el-button
                     v-for="item in faqSuggestions"
-                    :key="item.id"
+                    :key="item.question"
                     type="primary"
                     plain
                     size="small"
@@ -195,7 +195,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { chatAPI, deliveryAPI, menuAPI, faqAPI, reservationAPI } from './api/index.js'
 import { ElMessage } from 'element-plus'
 
@@ -210,6 +210,8 @@ export default {
     const faqSuggestions = ref([])
     const faqSuggestLoading = ref(false)
     let faqSuggestTimer = null
+    let faqSuggestController = null
+    let faqSuggestRequestId = 0
 
     // 配送相关
     const deliveryAddress = ref('')
@@ -305,21 +307,44 @@ export default {
       sendChatQuery()
     }
 
+    const cancelFaqSuggestionRequest = () => {
+      if (faqSuggestController) {
+        faqSuggestController.abort()
+        faqSuggestController = null
+      }
+      faqSuggestRequestId += 1
+    }
+
     const fetchFaqSuggestions = async (query) => {
       const q = (query || '').trim()
       if (!q) {
+        cancelFaqSuggestionRequest()
         faqSuggestions.value = []
+        faqSuggestLoading.value = false
         return
       }
+
+      if (faqSuggestController) {
+        faqSuggestController.abort()
+      }
+      const controller = new AbortController()
+      const requestId = ++faqSuggestRequestId
+      faqSuggestController = controller
       faqSuggestLoading.value = true
+
       try {
-        const res = await faqAPI.suggest(q, 6)
+        const res = await faqAPI.suggest(q, 6, controller.signal)
+        if (requestId !== faqSuggestRequestId) return
         const items = Array.isArray(res?.suggestions) ? res.suggestions : []
         faqSuggestions.value = items
       } catch (e) {
+        if (controller.signal.aborted || requestId !== faqSuggestRequestId) return
         faqSuggestions.value = []
       } finally {
-        faqSuggestLoading.value = false
+        if (requestId === faqSuggestRequestId) {
+          faqSuggestController = null
+          faqSuggestLoading.value = false
+        }
       }
     }
 
@@ -328,6 +353,7 @@ export default {
       if (chatLoading.value) return
       const question = item.question
       const answer = item.answer
+      cancelFaqSuggestionRequest()
       chatMessages.value.push({ role: 'user', content: question })
       chatMessages.value.push({ role: 'assistant', content: answer })
       chatQuery.value = ''
@@ -340,6 +366,7 @@ export default {
       if (!chatQuery.value.trim() || chatLoading.value) return
       
       const query = chatQuery.value
+      cancelFaqSuggestionRequest()
       faqSuggestions.value = []
       chatMessages.value.push({ role: 'user', content: query })
       chatQuery.value = ''
@@ -560,18 +587,31 @@ export default {
     watch(
       chatQuery,
       (val) => {
-        if (faqSuggestTimer) window.clearTimeout(faqSuggestTimer)
+        if (faqSuggestTimer) {
+          window.clearTimeout(faqSuggestTimer)
+          faqSuggestTimer = null
+        }
+        cancelFaqSuggestionRequest()
+        faqSuggestLoading.value = false
+        faqSuggestions.value = []
+
         const q = (val || '').trim()
         if (!q || q.length < 2 || chatLoading.value) {
-          faqSuggestions.value = []
           return
         }
         faqSuggestTimer = window.setTimeout(() => {
+          faqSuggestTimer = null
           fetchFaqSuggestions(q)
-        }, 220)
+        }, 450)
       },
       { flush: 'post' }
     )
+
+    onBeforeUnmount(() => {
+      if (faqSuggestTimer) window.clearTimeout(faqSuggestTimer)
+      if (autoHighlightTimer) window.clearTimeout(autoHighlightTimer)
+      cancelFaqSuggestionRequest()
+    })
 
     return {
       chatQuery,

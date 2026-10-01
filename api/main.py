@@ -1,7 +1,7 @@
 """FastAPI HTTP endpoints."""
 
+import asyncio
 import os
-from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -11,13 +11,14 @@ from typing import Optional,List
 from sqlalchemy import text
 from datetime import datetime
 
-from agent.langchain_assitant import assistant_query,mysql_connection
+from agent.langchain_assitant import assistant_query, get_embeddings, mysql_connection
 
 
 load_dotenv()
 
 app = FastAPI()
 client = None
+embedding_semaphore = asyncio.Semaphore(1)
 
 
 def _get_redis_client():
@@ -108,23 +109,25 @@ async def _load_faq_items_from_redis():
     ]
 
 
+def _get_similarity_scores(query: str, faq_questions: list[str]) -> list[float]:
+    """Return cosine similarity scores for one query and multiple FAQ questions."""
+    if not query or not faq_questions:
+        return []
+
+    embedding_model = get_embeddings()
+    vectors = embedding_model.encode(
+        [query, *faq_questions],
+        normalize_embeddings=True,
+    )
+    query_vector = vectors[0]
+    question_vectors = vectors[1:]
+    return (question_vectors @ query_vector).astype(float).tolist()
+
+
 def _get_similarity_score(query: str, faq_question: str) -> float:
-    """
-    使用简单的字符串匹配算法，计算query和faq_question的相似度的分
-    """
-    if not query or not faq_question:
-        return 0.0
-
-    # 使用包：difflib.sequenceMatcher
-    sequence_matcher = SequenceMatcher(None, query, faq_question)
-    score = sequence_matcher.ratio()
-    query_chars = set(query)
-    faq_chars = set(faq_question)
-    union = query_chars | faq_chars
-    jaccard_score = len(query_chars & faq_chars) / len(union) if union else 0.0
-
-    # 3、对这两个分数做一个加权
-    return 0.6 * score + 0.4 * jaccard_score
+    """Return the embedding cosine similarity for a single FAQ question."""
+    scores = _get_similarity_scores(query, [faq_question])
+    return scores[0] if scores else 0.0
 
 
 @app.post("/chat")
@@ -141,10 +144,10 @@ async def faq_endpoint(query: str, limit: int = 2):
     top_k = max(1, min(limit, 20))
     faq_items = await _load_faq_items_from_redis()
     # 2、将这些书中question和用户的query,进行比较，得到相识度得分
-    score_list = []
-    for faq_item in faq_items:
-        score = _get_similarity_score(query, faq_item.question)
-        score_list.append((score, faq_item))
+    questions = [faq_item.question for faq_item in faq_items]
+    async with embedding_semaphore:
+        scores = await asyncio.to_thread(_get_similarity_scores, query, questions)
+    score_list = list(zip(scores, faq_items))
 
     score_list.sort(key=lambda item: item[0], reverse=True)
 
